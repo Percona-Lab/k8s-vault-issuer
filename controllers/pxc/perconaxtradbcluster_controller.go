@@ -22,10 +22,12 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -70,7 +72,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 		err := r.Client.Get(context.TODO(),
 			types.NamespacedName{
 				Namespace: o.Namespace,
-				Name:      o.Spec.VaultSecretName + "-new",
+				Name:      o.Spec.VaultSecretName,
 			},
 			&newSecretObj,
 		)
@@ -82,13 +84,18 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 			return rr, nil
 		}
 
-		secretObj := corev1.Secret{}
+		rootSecretName, err := rootSecretName()
+		if err != nil {
+			return rr, err
+		}
+
+		rootSecretObj := corev1.Secret{}
 		err = r.Client.Get(context.TODO(),
 			types.NamespacedName{
 				Namespace: o.Namespace,
-				Name:      o.Spec.VaultSecretName,
+				Name:      rootSecretName,
 			},
-			&secretObj,
+			&rootSecretObj,
 		)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -98,7 +105,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 			return rr, err
 		}
 
-		err = r.IssueVaultToken(secretObj)
+		err = r.IssueVaultToken(rootSecretObj, o.Spec.VaultSecretName)
 		r.Log.Info("token was issued")
 
 		return rr, err
@@ -107,7 +114,14 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 	return rr, nil
 }
 
-func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.Secret) error {
+func rootSecretName() (string, error) {
+	if s, ok := os.LookupEnv("VAULT_SECRET_NAME"); ok {
+		return s, nil
+	}
+	return "", errors.New("VAULT_SECRET_NAME env is not set")
+}
+
+func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.Secret, newSecretName string) error {
 	data := string(rootVaultSercet.Data["keyring_vault.conf"])
 	fields := strings.Split(data, "\n")
 	conf := make(map[string]string)
@@ -191,8 +205,8 @@ vault_ca = %s`,
 
 	secretObj := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      rootVaultSercet.Name + "-new",
-			Namespace: rootVaultSercet.Namespace, // pass as a parameter
+			Name:      newSecretName,
+			Namespace: rootVaultSercet.Namespace,
 		},
 		Data: newData,
 		Type: corev1.SecretTypeOpaque,

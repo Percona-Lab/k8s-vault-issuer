@@ -1,6 +1,6 @@
 SHELL = /bin/bash
 
-GIT_BRANCH=$(shell git rev-parse --abbrev-ref HEAD | sed -e 's^/^-^g; s^[.]^-^g;' | tr '[:upper:]' '[:lower:]')
+GIT_BRANCH:=$(shell git rev-parse --abbrev-ref HEAD | sed -e 's^/^-^g; s^[.]^-^g;' | tr '[:upper:]' '[:lower:]')
 NAMESPACE:=vault-issuer-$(shell echo $${RANDOM})
 # Image URL to use all building/pushing image targets
 IMG ?= perconalab/percona-vault-issuer:$(GIT_BRANCH)
