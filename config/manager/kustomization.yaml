@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: perconalab/percona-vault-issuer
-  newTag: vault-secret
+  newTag: vault-secret-4
