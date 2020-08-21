@@ -1,0 +1,15 @@
+domain: percona.com
+layout: go.kubebuilder.io/v2
+multigroup: true
+projectName: k8s-vault-issuer
+repo: github.com/Percona-Lab/k8s-vault-issuer
+resources:
+- group: pxc
+  kind: PerconaXtraDBCluster
+  version: v1
+- group: psmdb
+  kind: PerconaServerMongoDB
+  version: v1
+version: 3-alpha
+plugins:
+  go.sdk.operatorframework.io/v2-alpha: {}
