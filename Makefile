@@ -2,8 +2,10 @@ SHELL = /bin/bash
 
 GIT_BRANCH:=$(shell git rev-parse --abbrev-ref HEAD | sed -e 's^/^-^g; s^[.]^-^g;' | tr '[:upper:]' '[:lower:]')
 NAMESPACE:=vault-issuer-$(shell echo $${RANDOM})
+
 # Image URL to use all building/pushing image targets
 IMG ?= perconalab/percona-vault-issuer:$(GIT_BRANCH)
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -22,12 +24,10 @@ run: generate
 	go run ./main.go
 
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
-deploy: kustomize
-	cd config/default/ && $(KUSTOMIZE) edit set namespace $(NAMESPACE)
-	cd config/manager/ && $(KUSTOMIZE) edit set image controller=${IMG}
+deploy:
 	kubectl create namespace $(NAMESPACE)
+	sed -s 's~vault-issuer-namespace~$(NAMESPACE)~; s~vault-issuer-image~$(IMG)~' ./config/manager/manager.yaml | kubectl apply -f -
 	sed -s 's/namespace: \"vault-issuer\"/namespace: \"$(NAMESPACE)\"/' ./config/rbac/rbac.yaml | kubectl apply --namespace=$(NAMESPACE) -f -
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
 # Generate code
 generate: controller-gen
@@ -37,7 +37,7 @@ generate: controller-gen
 docker-build:
 	docker build . -t ${IMG}
 
-# Push the docker image
+# Build and push the docker image
 docker-push: docker-build
 	docker push ${IMG}
 
@@ -56,19 +56,4 @@ ifeq (, $(shell which controller-gen))
 CONTROLLER_GEN=$(GOBIN)/controller-gen
 else
 CONTROLLER_GEN=$(shell which controller-gen)
-endif
-
-kustomize:
-ifeq (, $(shell which kustomize))
-	@{ \
-	set -e ;\
-	KUSTOMIZE_GEN_TMP_DIR=$$(mktemp -d) ;\
-	cd $$KUSTOMIZE_GEN_TMP_DIR ;\
-	go mod init tmp ;\
-	go get sigs.k8s.io/kustomize/kustomize/v3@v3.5.4 ;\
-	rm -rf $$KUSTOMIZE_GEN_TMP_DIR ;\
-	}
-KUSTOMIZE=$(GOBIN)/kustomize
-else
-KUSTOMIZE=$(shell which kustomize)
 endif
