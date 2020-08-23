@@ -65,9 +65,9 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 		return rr, err
 	}
 
-	// wait untill token issued to run PXC in data encrypted mode.
 	if _, ok := o.Annotations["issue-vault-token"]; ok {
-		r.Log.Info("annotation exists")
+		r.Log.Info("found annotation")
+
 		newSecretObj := corev1.Secret{}
 		err := r.Client.Get(context.TODO(),
 			types.NamespacedName{
@@ -99,16 +99,18 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 		)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				r.Log.Info("root secret was not found in namespace " + o.Namespace)
+				r.Log.Info("root secret was not found in namespace")
 				return rr, nil
 			}
 			return rr, err
 		}
 
 		err = r.IssueVaultToken(rootSecretObj, o.Spec.VaultSecretName)
-		r.Log.Info("token was issued")
+		if err != nil {
+			return rr, err
+		}
 
-		return rr, err
+		r.Log.Info("token was issued")
 	}
 
 	return rr, nil
