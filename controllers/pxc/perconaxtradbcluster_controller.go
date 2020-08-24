@@ -153,7 +153,7 @@ func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.
 		}
 	}
 
-	var httpClient = &http.Client{
+	httpClient := &http.Client{
 		Timeout:   10 * time.Second,
 		Transport: tr,
 	}
