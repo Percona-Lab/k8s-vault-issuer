@@ -52,8 +52,7 @@ type PerconaXtraDBClusterReconciler struct {
 // +kubebuilder:rbac:groups=pxc.percona.com,resources=perconaxtradbclusters/status,verbs=get;update;patch
 
 func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	_ = context.Background()
-	_ = r.Log.WithValues("perconaxtradbcluster", req.NamespacedName)
+	r.Log = r.Log.WithValues("perconaxtradbcluster", req.NamespacedName)
 
 	rr := reconcile.Result{
 		RequeueAfter: time.Second * 5,
