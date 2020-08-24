@@ -52,7 +52,7 @@ type PerconaXtraDBClusterReconciler struct {
 // +kubebuilder:rbac:groups=pxc.percona.com,resources=perconaxtradbclusters/status,verbs=get;update;patch
 
 func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	r.Log = r.Log.WithValues("perconaxtradbcluster", req.NamespacedName)
+	log := r.Log.WithValues("perconaxtradbcluster", req.NamespacedName)
 
 	rr := reconcile.Result{
 		RequeueAfter: time.Second * 5,
@@ -68,7 +68,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 		return rr, nil
 	}
 
-	r.Log.Info("found annotation")
+	log.Info("found annotation")
 
 	newSecretObj := corev1.Secret{}
 	err = r.Client.Get(context.TODO(),
@@ -82,8 +82,9 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 		return rr, err
 	}
 	if err == nil {
-		r.Log.Info("issued secret was found, waiting for annotation deletion")
-		return rr, nil
+		log.Info("issued secret was found, delete annotaton")
+		err = r.deleteAnnotation(o)
+		return rr, err
 	}
 
 	rootSecretName, err := rootSecretName()
@@ -101,7 +102,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 	)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			r.Log.Info("root secret was not found in namespace")
+			log.Info("root secret was not found in namespace")
 			return rr, nil
 		}
 		return rr, err
@@ -112,9 +113,13 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 		return rr, err
 	}
 
-	r.Log.Info("token was issued")
+	log.Info("token was issued, delete annotation")
 
-	return rr, nil
+	return rr, r.deleteAnnotation(o)
+}
+
+func (r *PerconaXtraDBClusterReconciler) deleteAnnotation(o *pxcv1.PerconaXtraDBCluster) error {
+	return r.Client.Patch(context.Background(), o, client.RawPatch(types.JSONPatchType, []byte("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/issue-vault-token\"}]")))
 }
 
 func rootSecretName() (string, error) {
