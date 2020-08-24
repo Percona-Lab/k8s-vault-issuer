@@ -64,53 +64,55 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 		return rr, err
 	}
 
-	if _, ok := o.Annotations["issue-vault-token"]; ok {
-		r.Log.Info("found annotation")
+	if _, ok := o.Annotations["issue-vault-token"]; !ok {
+		return rr, nil
+	}
 
-		newSecretObj := corev1.Secret{}
-		err := r.Client.Get(context.TODO(),
-			types.NamespacedName{
-				Namespace: o.Namespace,
-				Name:      o.Spec.VaultSecretName,
-			},
-			&newSecretObj,
-		)
-		if !apierrors.IsNotFound(err) {
-			return rr, err
-		}
-		if err == nil {
-			r.Log.Info("issued secret was found, waiting for annotation deletion")
+	r.Log.Info("found annotation")
+
+	newSecretObj := corev1.Secret{}
+	err = r.Client.Get(context.TODO(),
+		types.NamespacedName{
+			Namespace: o.Namespace,
+			Name:      o.Spec.VaultSecretName,
+		},
+		&newSecretObj,
+	)
+	if !apierrors.IsNotFound(err) {
+		return rr, err
+	}
+	if err == nil {
+		r.Log.Info("issued secret was found, waiting for annotation deletion")
+		return rr, nil
+	}
+
+	rootSecretName, err := rootSecretName()
+	if err != nil {
+		return rr, err
+	}
+
+	rootSecretObj := corev1.Secret{}
+	err = r.Client.Get(context.TODO(),
+		types.NamespacedName{
+			Namespace: o.Namespace,
+			Name:      rootSecretName,
+		},
+		&rootSecretObj,
+	)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			r.Log.Info("root secret was not found in namespace")
 			return rr, nil
 		}
-
-		rootSecretName, err := rootSecretName()
-		if err != nil {
-			return rr, err
-		}
-
-		rootSecretObj := corev1.Secret{}
-		err = r.Client.Get(context.TODO(),
-			types.NamespacedName{
-				Namespace: o.Namespace,
-				Name:      rootSecretName,
-			},
-			&rootSecretObj,
-		)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				r.Log.Info("root secret was not found in namespace")
-				return rr, nil
-			}
-			return rr, err
-		}
-
-		err = r.IssueVaultToken(rootSecretObj, o.Spec.VaultSecretName)
-		if err != nil {
-			return rr, err
-		}
-
-		r.Log.Info("token was issued")
+		return rr, err
 	}
+
+	err = r.IssueVaultToken(rootSecretObj, o.Spec.VaultSecretName)
+	if err != nil {
+		return rr, err
+	}
+
+	r.Log.Info("token was issued")
 
 	return rr, nil
 }
