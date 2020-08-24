@@ -23,6 +23,7 @@ spec:
         - --enable-leader-election
         image: vault-issuer-image
         name: vault-issuer
+        imagePullPolicy: Always
         resources:
           limits:
             cpu: 100m
