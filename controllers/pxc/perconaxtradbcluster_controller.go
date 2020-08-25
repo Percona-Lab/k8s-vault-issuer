@@ -173,18 +173,18 @@ func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.
 	}
 
 	cli.SetToken(conf["token"])
+	path := fmt.Sprintf("%s/%s", conf["secret_mount_point"], rootVaultSercet.Namespace)
 	policy := fmt.Sprintf(`
-path "%s/%s"
+path "%s"
 {
   capabilities = ["create", "read", "update", "delete", "list"]
 }
 
-path "%s/%s/*"
+path "%s/*"
 {
   capabilities = ["create", "read", "update", "delete", "list"]
 }
-`, conf["secret_mount_point"], rootVaultSercet.Namespace,
-		conf["secret_mount_point"], rootVaultSercet.Namespace)
+`, path, path)
 
 	err = cli.Sys().PutPolicy(rootVaultSercet.Namespace, policy)
 	if err != nil {
