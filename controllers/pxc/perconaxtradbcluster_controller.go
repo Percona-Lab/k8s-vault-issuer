@@ -207,7 +207,7 @@ secret_mount_point = %s
 vault_ca = %s`,
 			token,
 			conf["vault_url"],
-			conf["secret_mount_point"]+"/"+rootVaultSercet.Namespace,
+			path,
 			conf["vault_ca"],
 		))
 
