@@ -64,7 +64,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 		return rr, err
 	}
 
-	if _, ok := o.Annotations["issue-vault-token"]; !ok {
+	if _, ok := o.Annotations["percona.com/issue-vault-token"]; !ok {
 		return rr, nil
 	}
 
@@ -119,7 +119,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 }
 
 func (r *PerconaXtraDBClusterReconciler) deleteAnnotation(o *pxcv1.PerconaXtraDBCluster) error {
-	return r.Client.Patch(context.Background(), o, client.RawPatch(types.JSONPatchType, []byte("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/issue-vault-token\"}]")))
+	return r.Client.Patch(context.Background(), o, client.RawPatch(types.JSONPatchType, []byte("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/percona.com/issue-vault-token\"}]")))
 }
 
 func rootSecretName() (string, error) {
