@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -70,6 +71,11 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 
 	log.Info("found annotation")
 
+	opNs, err := operatorNamespace()
+	if err != nil {
+		return rr, errors.Wrap(err, "get operator namespace")
+	}
+
 	newSecretObj := corev1.Secret{}
 	err = r.Client.Get(context.TODO(),
 		types.NamespacedName{
@@ -95,14 +101,14 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 	rootSecretObj := corev1.Secret{}
 	err = r.Client.Get(context.TODO(),
 		types.NamespacedName{
-			Namespace: o.Namespace,
+			Namespace: opNs,
 			Name:      rootSecretName,
 		},
 		&rootSecretObj,
 	)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("root secret was not found in namespace")
+			log.Info("root secret was not found")
 			return rr, nil
 		}
 		return rr, err
@@ -146,12 +152,12 @@ func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.
 
 		certPool, err := x509.SystemCertPool()
 		if err != nil {
-			return fmt.Errorf("failed to get system cert pool: %v", err)
+			return errors.Wrap(err, "failed to get system cert pool")
 		}
 
 		ok := certPool.AppendCertsFromPEM(ca)
 		if !ok {
-			return fmt.Errorf("failed to append cert")
+			return errors.New("failed to append cert")
 		}
 
 		tr.TLSClientConfig = &tls.Config{
@@ -168,7 +174,7 @@ func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.
 		Address:    conf["vault_url"],
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create vault client: %v", err)
+		return errors.Wrap(err, "failed to create vault client")
 	}
 
 	cli.SetToken(conf["token"])
@@ -188,14 +194,14 @@ path "%s/*"
 	policyName := fmt.Sprintf("%s-%s", customerNamespace, newSecretName)
 	err = cli.Sys().PutPolicy(policyName, policy)
 	if err != nil {
-		return fmt.Errorf("failed to put policy: %v", err)
+		return errors.Wrap(err, "failed to put policy")
 	}
 
 	sec, err := cli.Auth().Token().Create(&api.TokenCreateRequest{
 		Policies: []string{policyName},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create token: %v", err)
+		return errors.Wrap(err, "failed to create token")
 	}
 
 	token := sec.Auth.ClientToken
@@ -222,7 +228,7 @@ vault_ca = %s`,
 
 	err = r.Client.Create(context.TODO(), &secretObj)
 	if err != nil {
-		return fmt.Errorf("create token secret: %v", err)
+		return errors.Wrap(err, "create token secret")
 	}
 
 	return nil
@@ -232,4 +238,13 @@ func (r *PerconaXtraDBClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&pxcv1.PerconaXtraDBCluster{}).
 		Complete(r)
+}
+
+func operatorNamespace() (string, error) {
+	nsBytes, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(nsBytes)), nil
 }
