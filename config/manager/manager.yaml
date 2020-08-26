@@ -24,6 +24,9 @@ spec:
         image: vault-issuer-image
         name: vault-issuer
         imagePullPolicy: Always
+        env:
+          - name: VAULT_SECRET_NAME
+            value: "root-token"
         resources:
           limits:
             cpu: 100m

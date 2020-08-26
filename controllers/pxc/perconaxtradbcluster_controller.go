@@ -108,7 +108,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 		return rr, err
 	}
 
-	err = r.IssueVaultToken(rootSecretObj, o.Spec.VaultSecretName)
+	err = r.IssueVaultToken(rootSecretObj, o.Spec.VaultSecretName, o.Namespace)
 	if err != nil {
 		return rr, err
 	}
@@ -119,7 +119,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 }
 
 func (r *PerconaXtraDBClusterReconciler) deleteAnnotation(o *pxcv1.PerconaXtraDBCluster) error {
-	return r.Client.Patch(context.Background(), o, client.RawPatch(types.JSONPatchType, []byte("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/percona.com/issue-vault-token\"}]")))
+	return r.Client.Patch(context.Background(), o, client.RawPatch(types.JSONPatchType, []byte("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/percona.com~1issue-vault-token\"}]")))
 }
 
 func rootSecretName() (string, error) {
@@ -129,7 +129,7 @@ func rootSecretName() (string, error) {
 	return "", errors.New("VAULT_SECRET_NAME env is not set")
 }
 
-func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.Secret, newSecretName string) error {
+func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.Secret, newSecretName string, customerNamespace string) error {
 	data := string(rootVaultSercet.Data["keyring_vault.conf"])
 	fields := strings.Split(data, "\n")
 	conf := make(map[string]string)
@@ -155,8 +155,7 @@ func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.
 		}
 
 		tr.TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: true,
-			RootCAs:            certPool,
+			RootCAs: certPool,
 		}
 	}
 
@@ -173,7 +172,7 @@ func (r *PerconaXtraDBClusterReconciler) IssueVaultToken(rootVaultSercet corev1.
 	}
 
 	cli.SetToken(conf["token"])
-	path := fmt.Sprintf("%s/%s", conf["secret_mount_point"], rootVaultSercet.Namespace)
+	path := fmt.Sprintf("%s/%s/%s", conf["secret_mount_point"], customerNamespace, newSecretName)
 	policy := fmt.Sprintf(`
 path "%s"
 {
@@ -186,13 +185,14 @@ path "%s/*"
 }
 `, path, path)
 
-	err = cli.Sys().PutPolicy(rootVaultSercet.Namespace, policy)
+	policyName := fmt.Sprintf("%s-%s", customerNamespace, newSecretName)
+	err = cli.Sys().PutPolicy(policyName, policy)
 	if err != nil {
 		return fmt.Errorf("failed to put policy: %v", err)
 	}
 
 	sec, err := cli.Auth().Token().Create(&api.TokenCreateRequest{
-		Policies: []string{rootVaultSercet.Namespace},
+		Policies: []string{policyName},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create token: %v", err)
@@ -214,7 +214,7 @@ vault_ca = %s`,
 	secretObj := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      newSecretName,
-			Namespace: rootVaultSercet.Namespace,
+			Namespace: customerNamespace,
 		},
 		Data: newData,
 		Type: corev1.SecretTypeOpaque,

@@ -21,6 +21,5 @@ FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 ENV VAULT_SECRET_NAME="root-vault-secret"
 WORKDIR /
 COPY --from=builder /workspace/manager .
-USER nonroot:nonroot
 
 ENTRYPOINT ["/manager"]
