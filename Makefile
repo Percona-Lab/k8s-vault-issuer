@@ -26,7 +26,7 @@ run: generate
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 deploy:
 	kubectl create namespace $(NAMESPACE)
-	sed -s 's~vault-issuer-namespace~$(NAMESPACE)~; s~vault-issuer-image~$(IMG)~' ./config/manager/manager.yaml | kubectl apply -f -
+	sed -s 's~vault-issuer-namespace~$(NAMESPACE)~; s~perconalab/percona-vault-issuer:0.0.1~$(IMG)~' ./config/manager/manager.yaml | kubectl apply -f -
 	sed -s 's/namespace: \"vault-issuer\"/namespace: \"$(NAMESPACE)\"/' ./config/rbac/rbac.yaml | kubectl apply --namespace=$(NAMESPACE) -f -
 
 # Generate code

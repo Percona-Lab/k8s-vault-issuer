@@ -21,7 +21,7 @@ spec:
         - /manager
         args:
         - --enable-leader-election
-        image: vault-issuer-image
+        image: perconalab/percona-vault-issuer:0.0.1
         name: vault-issuer
         imagePullPolicy: Always
         env:
