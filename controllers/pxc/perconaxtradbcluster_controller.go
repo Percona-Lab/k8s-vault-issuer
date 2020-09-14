@@ -18,10 +18,10 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/go-logr/logr"
@@ -72,6 +72,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 	}
 
 	if val, ok := o.Annotations["percona.com/vault-transfer-keys"]; ok {
+		log.Info("copying transition keys")
 		err = r.processTransferVaultKeys(o, strings.Split(val, ","))
 		if err != nil {
 			return rr, errors.Wrap(err, "transfer vault keys")
@@ -87,33 +88,7 @@ func (r *PerconaXtraDBClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Complete(r)
 }
 
-func (r *PerconaXtraDBClusterReconciler) vaultRootConf() (vaultRootConf, error) {
-	rootSecretObj := corev1.Secret{}
-	err := r.Client.Get(context.TODO(),
-		types.NamespacedName{
-			Namespace: r.Namespace,
-			Name:      r.RootVaultSecretName,
-		},
-		&rootSecretObj,
-	)
-	if err != nil {
-		// отваливаемся тут
-		return vaultRootConf{}, err
-	}
-
-	res := &vaultRootConf{
-		Cert:   rootSecretObj.Data["ca.cert"],
-		Config: make(map[string]string, 0),
-	}
-
-	data := string(rootSecretObj.Data["keyring_vault.conf"])
-	for _, f := range strings.Split(data, "\n") {
-		kv := strings.Split(f, "=")
-		res.Config[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
-	}
-	return res, nil
-}
-
-func (r *PerconaXtraDBClusterReconciler) deleteAnnotation(o *pxcv1.PerconaXtraDBCluster) error {
-	return r.Client.Patch(context.Background(), o, client.RawPatch(types.JSONPatchType, []byte("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/percona.com~1issue-vault-token\"}]")))
+func (r *PerconaXtraDBClusterReconciler) deleteAnnotation(o *pxcv1.PerconaXtraDBCluster, annotation string) error {
+	annotation = strings.Replace(annotation, "/", "~1", -1)
+	return r.Client.Patch(context.Background(), o, client.RawPatch(types.JSONPatchType, []byte(fmt.Sprintf("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/%s\"}]", annotation))))
 }

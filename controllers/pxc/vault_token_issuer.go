@@ -2,11 +2,7 @@ package controllers
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"net/http"
-	"time"
 
 	pxcv1 "github.com/Percona-Lab/k8s-vault-issuer/apis/pxc/v1"
 	"github.com/go-logr/logr"
@@ -32,51 +28,29 @@ func (r *PerconaXtraDBClusterReconciler) processVaultIssueAnnotation(o *pxcv1.Pe
 	}
 	if err == nil {
 		log.Info("issued secret was found, delete annotation")
-		return r.deleteAnnotation(o)
+		return r.deleteAnnotation(o, "percona.com/issue-vault-token")
 	}
 
 	return r.issueVaultToken(o.Spec.VaultSecretName, o.Namespace)
 }
 
 func (r *PerconaXtraDBClusterReconciler) issueVaultToken(newSecretName string, customerNamespace string) error {
-	rootVaultConf, err := r.vaultRootConf()
+	rootVaultConf, err := r.vaultConfFrom(r.Namespace, r.RootVaultSecretName)
 	if err != nil {
 		return errors.Wrap(err, "get root vault config")
 	}
+
+	cl, err := vaultClient(rootVaultConf)
+	if err != nil {
+		return errors.Wrap(err, "create vault client")
+	}
+
 	newData := make(map[string][]byte)
 
-	tr := &http.Transport{}
 	if rootVaultConf.Cert != nil {
 		newData["ca.cert"] = rootVaultConf.Cert
-
-		certPool, err := x509.SystemCertPool()
-		if err != nil {
-			return errors.Wrap(err, "failed to get system cert pool")
-		}
-
-		ok := certPool.AppendCertsFromPEM(rootVaultConf.Cert)
-		if !ok {
-			return errors.New("failed to append cert")
-		}
-
-		tr.TLSClientConfig = &tls.Config{
-			RootCAs: certPool,
-		}
 	}
 
-	httpClient := &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: tr,
-	}
-	cli, err := api.NewClient(&api.Config{
-		HttpClient: httpClient,
-		Address:    rootVaultConf.Config["vault_url"],
-	})
-	if err != nil {
-		return errors.Wrap(err, "failed to create vault client")
-	}
-
-	cli.SetToken(rootVaultConf.Config["token"])
 	path := fmt.Sprintf("%s/%s/%s", rootVaultConf.Config["secret_mount_point"], customerNamespace, newSecretName)
 	policy := fmt.Sprintf(`
 path "%s"
@@ -91,12 +65,12 @@ path "%s/*"
 `, path, path)
 
 	policyName := fmt.Sprintf("%s-%s", customerNamespace, newSecretName)
-	err = cli.Sys().PutPolicy(policyName, policy)
+	err = cl.Sys().PutPolicy(policyName, policy)
 	if err != nil {
 		return errors.Wrap(err, "failed to put policy")
 	}
 
-	sec, err := cli.Auth().Token().Create(&api.TokenCreateRequest{
+	sec, err := cl.Auth().Token().Create(&api.TokenCreateRequest{
 		Policies: []string{policyName},
 	})
 	if err != nil {

@@ -10,68 +10,97 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeys(o *pxcv1.PerconaXtraDBCluster, clusters []string) error {
-	currCluster := o.ClusterName + "." + r.Namespace
+func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeys(currClusterCR *pxcv1.PerconaXtraDBCluster, clusters []string) error {
+	currClusterName := currClusterCR.Name + "." + currClusterCR.Namespace
 	for _, v := range clusters {
 		splittedName := strings.Split(v, ".")
+		if len(splittedName) != 2 {
+			return errors.New("Invalid source cluster name, plaease use format clusterName.namespace")
+		}
+
 		clusterName, clusterNamespace := splittedName[0], splittedName[1]
 
-		spec := &pxcv1.PerconaXtraDBCluster{}
+		srcClusterCR := &pxcv1.PerconaXtraDBCluster{}
 		err := r.Client.Get(context.TODO(),
 			types.NamespacedName{
 				Namespace: clusterNamespace,
 				Name:      clusterName,
-			}, spec)
+			}, srcClusterCR)
 		if err != nil {
-			return errors.Wrap(err, "get cluster spec from namespace "+v)
+			return errors.Wrap(err, "get cluster srcClusterCR from namespace "+v)
 		}
 
-		values, ok := spec.Annotations["percona.com/allow-transition-key-transfer"]
+		values, ok := srcClusterCR.Annotations["percona.com/allow-transition-key-transfer"]
 		if !ok {
 			return fmt.Errorf("No percona.com/allow-transition-key-transfer annotation found at cluster %s", v)
 		}
 
 		allowed := false
 		for _, allowedClusters := range strings.Split(values, ",") {
-			if allowedClusters == currCluster {
+			if allowedClusters == currClusterName {
 				allowed = true
 				break
 			}
 		}
 
 		if !allowed {
-			return fmt.Errorf("Cluster %s is not allowing copying keys for cluster %s ", v, currCluster)
+			return fmt.Errorf("Cluster %s is not allowing copying keys for cluster %s ", v, currClusterName)
 		}
 
-		if err := r.transferTransitionKeys(v, o.Namespace); err != nil {
-			return errors.Wrapf(err, "transfer transition key from:%s to:%s", v, o.Namespace)
+		if err := r.transferTransitionKeys(srcClusterCR, currClusterCR); err != nil {
+			return errors.Wrapf(err, "transfer transition key from:%s to:%s", v, currClusterCR.Namespace)
 		}
 	}
-	return nil
+	return r.deleteAnnotation(currClusterCR, "percona.com/vault-transfer-keys")
 }
 
-func (r *PerconaXtraDBClusterReconciler) transferTransitionKeys(secretFrom, toNS string) error {
-	vaultConf, err := r.vaultRootConf()
+func (r *PerconaXtraDBClusterReconciler) transferTransitionKeys(from, to *pxcv1.PerconaXtraDBCluster) error {
+	srcVaultConf, err := r.vaultConfFrom(from.Namespace, from.Spec.VaultSecretName)
+	if err != nil {
+		return errors.Wrapf(err, "Get vault conf from namespace: %s, secretName: %s", from.Namespace, from.Spec.VaultSecretName)
+	}
+
+	targetVaultConf, err := r.vaultConfFrom(to.Namespace, to.Spec.VaultSecretName)
+	if err != nil {
+		return errors.Wrapf(err, "Get vault conf from namespace: %s, secretName: %s", to.Namespace, to.Spec.VaultSecretName)
+	}
+
+	vaultSecretFrom := srcVaultConf.Config["secret_mount_point"]
+	vaultSecretTo := targetVaultConf.Config["secret_mount_point"]
+
+	r.Log.Info("Copying keys from", "from", vaultSecretFrom, "to", vaultSecretTo)
+	vaultRootConf, err := r.vaultConfFrom(r.Namespace, r.RootVaultSecretName)
 	if err != nil {
 		return errors.Wrap(err, "get root conf")
 	}
 
-	vaultClient, err := vaultClient(vaultConf)
+	vaultClient, err := vaultClient(vaultRootConf)
 	if err != nil {
 		return errors.Wrap(err, "setup vault client")
 	}
+
 	logicalClient := vaultClient.Logical()
-	secrets, err := logicalClient.List(secretFrom + "/backup/")
+	secretList, err := logicalClient.List(vaultSecretFrom + "/backup/")
 	if err != nil {
-		return errors.Wrap(err, "list backup secrets")
+		return errors.Wrap(err, "list backup secretList")
 	}
-	result := make(map[string]string, 0)
-	for backupUID := range secrets.Data {
-		secretData, err := logicalClient.Read(secretFrom + "/backup/" + backupUID)
+
+	if secretList == nil || secretList.Data == nil || secretList.Data["keys"] == nil {
+		return errors.New("No transition keys found")
+	}
+
+	for _, backupUIDInterface := range secretList.Data["keys"].([]interface{}) {
+		backupUID := backupUIDInterface.(string)
+
+		secretData, err := logicalClient.Read(vaultSecretFrom + "/backup/" + backupUID)
 		if err != nil {
 			return errors.Wrap(err, "read secret data from vault")
 		}
-		result[backupUID] = secretData.Data["transition_key"].(string)
-	}
 
+		_, err = logicalClient.Write(vaultSecretTo+"/backup/"+backupUID, secretData.Data)
+		if err != nil {
+			return errors.Wrap(err, "copy transition key")
+		}
+	}
+	return nil
 }

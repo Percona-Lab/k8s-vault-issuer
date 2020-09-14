@@ -74,7 +74,7 @@ func main() {
 
 	rootSecretName, ok := os.LookupEnv("VAULT_SECRET_NAME")
 	if !ok {
-		setupLog.Error(errors.New("VAULT_SECRET_NAME env variable is not set"))
+		setupLog.Error(errors.New("VAULT_SECRET_NAME env variable is not set"), "can't find vault secret name")
 		os.Exit(1)
 	}
 
