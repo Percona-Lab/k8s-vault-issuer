@@ -15,7 +15,7 @@ func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeys(currClusterCR 
 	for _, v := range clusters {
 		splittedName := strings.Split(v, ".")
 		if len(splittedName) != 2 {
-			return errors.New("Invalid source cluster name, plaease use format clusterName.namespace")
+			return errors.New("invalid source cluster name, plaease use format clusterName.namespace")
 		}
 
 		clusterName, clusterNamespace := splittedName[0], splittedName[1]
@@ -32,7 +32,7 @@ func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeys(currClusterCR 
 
 		values, ok := srcClusterCR.Annotations["percona.com/allow-transition-key-transfer"]
 		if !ok {
-			return fmt.Errorf("No percona.com/allow-transition-key-transfer annotation found at cluster %s", v)
+			return fmt.Errorf("no percona.com/allow-transition-key-transfer annotation found at cluster %s", v)
 		}
 
 		allowed := false
@@ -44,7 +44,7 @@ func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeys(currClusterCR 
 		}
 
 		if !allowed {
-			return fmt.Errorf("Cluster %s is not allowing copying keys for cluster %s ", v, currClusterName)
+			return fmt.Errorf("cluster %s is not allowing copying keys for cluster %s ", v, currClusterName)
 		}
 
 		if err := r.transferTransitionKeys(srcClusterCR, currClusterCR); err != nil {
@@ -57,12 +57,12 @@ func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeys(currClusterCR 
 func (r *PerconaXtraDBClusterReconciler) transferTransitionKeys(from, to *pxcv1.PerconaXtraDBCluster) error {
 	srcVaultConf, err := r.vaultConfFrom(from.Namespace, from.Spec.VaultSecretName)
 	if err != nil {
-		return errors.Wrapf(err, "Get vault conf from namespace: %s, secretName: %s", from.Namespace, from.Spec.VaultSecretName)
+		return errors.Wrapf(err, "get vault conf from namespace: %s, secretName: %s", from.Namespace, from.Spec.VaultSecretName)
 	}
 
 	targetVaultConf, err := r.vaultConfFrom(to.Namespace, to.Spec.VaultSecretName)
 	if err != nil {
-		return errors.Wrapf(err, "Get vault conf from namespace: %s, secretName: %s", to.Namespace, to.Spec.VaultSecretName)
+		return errors.Wrapf(err, "get vault conf from namespace: %s, secretName: %s", to.Namespace, to.Spec.VaultSecretName)
 	}
 
 	vaultSecretFrom := srcVaultConf.Config["secret_mount_point"]
@@ -86,7 +86,7 @@ func (r *PerconaXtraDBClusterReconciler) transferTransitionKeys(from, to *pxcv1.
 	}
 
 	if secretList == nil || secretList.Data == nil || secretList.Data["keys"] == nil {
-		return errors.New("No transition keys found")
+		return errors.New("no transition keys found")
 	}
 
 	for _, backupUIDInterface := range secretList.Data["keys"].([]interface{}) {

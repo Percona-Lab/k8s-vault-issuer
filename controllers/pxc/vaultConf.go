@@ -25,7 +25,6 @@ func (r *PerconaXtraDBClusterReconciler) vaultConfFrom(namespace, secretName str
 		&rootSecretObj,
 	)
 	if err != nil {
-		// отваливаемся тут
 		return vaultRootConf{}, err
 	}
 
@@ -49,7 +48,7 @@ func vaultClient(vaultConf vaultRootConf) (*api.Client, error) {
 	if vaultConf.Cert != nil {
 		tr, err := vaultTransport(vaultConf.Cert)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "create vault transport")
 		}
 		httpClient.Transport = tr
 	}
@@ -60,7 +59,7 @@ func vaultClient(vaultConf vaultRootConf) (*api.Client, error) {
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "create vault client")
 	}
 	client.SetToken(vaultConf.Config["token"])
 	return client, nil
