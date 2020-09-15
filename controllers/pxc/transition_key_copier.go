@@ -68,7 +68,8 @@ func (r *PerconaXtraDBClusterReconciler) transferTransitionKeys(from, to *pxcv1.
 	vaultSecretFrom := srcVaultConf.Config["secret_mount_point"]
 	vaultSecretTo := targetVaultConf.Config["secret_mount_point"]
 
-	r.Log.Info("Copying keys from", "from", vaultSecretFrom, "to", vaultSecretTo)
+	r.Log.Info("Copying transition keys", "from", vaultSecretFrom, "to", vaultSecretTo)
+
 	vaultRootConf, err := r.vaultConfFrom(r.Namespace, r.RootVaultSecretName)
 	if err != nil {
 		return errors.Wrap(err, "get root conf")
