@@ -17,8 +17,8 @@ limitations under the License.
 package main
 
 import (
-	"errors"
 	"flag"
+	"github.com/pkg/errors"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -80,7 +80,7 @@ func main() {
 
 	operatorNS, err := operatorNamespace()
 	if err != nil {
-		setupLog.Error(err, "Can't get operator's namespace")
+		setupLog.Error(err, "can't get operator's namespace")
 		os.Exit(1)
 	}
 

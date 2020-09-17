@@ -27,12 +27,12 @@ func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeys(currClusterCR 
 				Name:      clusterName,
 			}, srcClusterCR)
 		if err != nil {
-			return errors.Wrap(err, "get cluster srcClusterCR from namespace "+v)
+			return errors.Wrapf(err, "get cluster srcClusterCR from namespace %s", v)
 		}
 
 		values, ok := srcClusterCR.Annotations["percona.com/allow-transition-key-transfer"]
 		if !ok {
-			return fmt.Errorf("no percona.com/allow-transition-key-transfer annotation found at cluster %s", v)
+			return errors.Errorf("no percona.com/allow-transition-key-transfer annotation found at cluster %s", v)
 		}
 
 		allowed := false

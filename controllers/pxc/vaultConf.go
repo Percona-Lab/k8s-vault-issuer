@@ -30,7 +30,7 @@ func (r *PerconaXtraDBClusterReconciler) vaultConfFrom(namespace, secretName str
 
 	res := vaultRootConf{
 		Cert:   rootSecretObj.Data["ca.cert"],
-		Config: make(map[string]string, 0),
+		Config: make(map[string]string),
 	}
 
 	data := string(rootSecretObj.Data["keyring_vault.conf"])
