@@ -73,7 +73,7 @@ func (r *PerconaXtraDBClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Resul
 
 	if val, ok := o.Annotations["percona.com/vault-transfer-keys"]; ok {
 		log.Info("copying transition keys")
-		err = r.processTransferVaultKeys(o, strings.Split(val, ","))
+		err = r.processTransferVaultKeys(o, val, r.Log.WithName("transfer-vault-keys"))
 		if err != nil {
 			return rr, errors.Wrap(err, "transfer vault keys")
 		}
