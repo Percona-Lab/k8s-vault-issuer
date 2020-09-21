@@ -18,7 +18,10 @@ package main
 
 import (
 	"flag"
+	"github.com/pkg/errors"
+	"io/ioutil"
 	"os"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -69,10 +72,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	rootSecretName, ok := os.LookupEnv("VAULT_SECRET_NAME")
+	if !ok {
+		setupLog.Error(errors.New("VAULT_SECRET_NAME env variable is not set"), "can't find vault secret name")
+		os.Exit(1)
+	}
+
+	operatorNS, err := operatorNamespace()
+	if err != nil {
+		setupLog.Error(err, "can't get operator's namespace")
+		os.Exit(1)
+	}
+
 	if err = (&pxccontroller.PerconaXtraDBClusterReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("PerconaXtraDBCluster"),
-		Scheme: mgr.GetScheme(),
+		Client:              mgr.GetClient(),
+		Log:                 ctrl.Log.WithName("controllers").WithName("PerconaXtraDBCluster"),
+		Scheme:              mgr.GetScheme(),
+		Namespace:           operatorNS,
+		RootVaultSecretName: rootSecretName,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PerconaXtraDBCluster")
 		os.Exit(1)
@@ -92,4 +109,13 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func operatorNamespace() (string, error) {
+	nsBytes, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(nsBytes)), nil
 }
