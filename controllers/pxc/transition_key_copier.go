@@ -7,15 +7,33 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/go-logr/logr"
-
 	pxcv1 "github.com/Percona-Lab/k8s-vault-issuer/apis/pxc/v1"
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeys(currClusterCR *pxcv1.PerconaXtraDBCluster, clustersStr string, log logr.Logger) error {
-	currClusterName := currClusterCR.Name + "." + currClusterCR.Namespace
+type Cluster struct {
+	Name      string
+	Namespace string
+}
+
+func (c Cluster) String() string {
+	return c.Name + "." + c.Namespace
+}
+
+func (c Cluster) isCopyAllowed(allowedClusters string) bool {
+	currClusterStr := c.String()
+	for _, v := range strings.Split(allowedClusters, ",") {
+		if currClusterStr == v {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeysAnnotation(currClusterCR *pxcv1.PerconaXtraDBCluster, clustersStr string) error {
+	currCluster := Cluster{currClusterCR.Name, currClusterCR.Namespace}
+	logger := r.Log.WithValues("curr cluster name", currCluster)
 
 	clusters := strings.Split(clustersStr, ",")
 	failedClusters := make([]string, 0)
@@ -23,56 +41,48 @@ func (r *PerconaXtraDBClusterReconciler) processTransferVaultKeys(currClusterCR 
 	for _, v := range clusters {
 		splittedName := strings.Split(v, ".")
 		if len(splittedName) != 2 {
-			log.Error(nil, "invalid source cluster name, please use format clusterName.namespace", "cluster name", v)
+			logger.Error(nil, "invalid source cluster name, please use format clusterName.namespace", "src cluster", v)
 			failedClusters = append(failedClusters, v)
 			continue
 		}
 
-		clusterName, clusterNamespace := splittedName[0], splittedName[1]
+		srcCluster := Cluster{splittedName[0], splittedName[1]}
 
-		srcClusterCR := &pxcv1.PerconaXtraDBCluster{}
-		err := r.Client.Get(context.TODO(),
-			types.NamespacedName{
-				Namespace: clusterNamespace,
-				Name:      clusterName,
-			}, srcClusterCR)
+		err := r.processClusterKeysTransfer(currClusterCR, currCluster, srcCluster)
 		if err != nil {
-			log.Error(err, "get cluster srcClusterCR from namespace", "namespace", clusterNamespace)
+			r.Log.Error(err, "Can't process cluster", "scr cluster", srcCluster)
 			failedClusters = append(failedClusters, v)
-			continue
-		}
-
-		values, ok := srcClusterCR.Annotations["percona.com/allow-transition-key-transfer"]
-		if !ok {
-			log.Error(nil, "no percona.com/allow-transition-key-transfer annotation found at cluster", "cluster name", v)
-			failedClusters = append(failedClusters, v)
-			continue
-		}
-
-		allowed := false
-		for _, allowedClusters := range strings.Split(values, ",") {
-			if allowedClusters == currClusterName {
-				allowed = true
-				break
-			}
-		}
-
-		if !allowed {
-			log.Error(nil, "cluster is not allowing copying keys", "cluster from", v, "cluster to", currClusterName)
-			failedClusters = append(failedClusters, v)
-			continue
-		}
-
-		if err := r.transferTransitionKeys(srcClusterCR, currClusterCR); err != nil {
-			log.Error(err, "transfer transition key", "cluster from", v, "cluster to", currClusterName)
-			failedClusters = append(failedClusters, v)
-			continue
 		}
 	}
+
 	if len(failedClusters) == 0 {
 		return r.deleteAnnotation(currClusterCR, "percona.com/vault-transfer-keys")
 	}
+
 	return r.updateTransferKeysAnnotationClusters(currClusterCR, failedClusters)
+}
+
+func (r *PerconaXtraDBClusterReconciler) processClusterKeysTransfer(currentCR *pxcv1.PerconaXtraDBCluster, currCluster, srcCluster Cluster) error {
+	srcClusterCR := &pxcv1.PerconaXtraDBCluster{}
+	err := r.Client.Get(context.TODO(),
+		types.NamespacedName{
+			Namespace: srcCluster.Namespace,
+			Name:      srcCluster.Name,
+		}, srcClusterCR)
+	if err != nil {
+		return errors.Wrap(err, "get cluster definition")
+	}
+
+	values, ok := srcClusterCR.Annotations["percona.com/allow-transition-key-transfer"]
+	if !ok {
+		return errors.New("no percona.com/allow-transition-key-transfer annotation found")
+	}
+
+	if !currCluster.isCopyAllowed(values) {
+		return errors.Errorf("transition key copy is now allowed")
+	}
+
+	return r.copyVaultTransitionKeys(currentCR, srcClusterCR)
 }
 
 func (r *PerconaXtraDBClusterReconciler) updateTransferKeysAnnotationClusters(o *pxcv1.PerconaXtraDBCluster, in []string) error {
@@ -81,7 +91,7 @@ func (r *PerconaXtraDBClusterReconciler) updateTransferKeysAnnotationClusters(o 
 		"percona.com~1vault-transfer-keys", strings.Join(in, ",")))))
 }
 
-func (r *PerconaXtraDBClusterReconciler) transferTransitionKeys(from, to *pxcv1.PerconaXtraDBCluster) error {
+func (r *PerconaXtraDBClusterReconciler) copyVaultTransitionKeys(from, to *pxcv1.PerconaXtraDBCluster) error {
 	srcVaultConf, err := r.vaultConfFrom(from.Namespace, from.Spec.VaultSecretName)
 	if err != nil {
 		return errors.Wrapf(err, "get vault conf from namespace: %s, secretName: %s", from.Namespace, from.Spec.VaultSecretName)
@@ -118,7 +128,11 @@ func (r *PerconaXtraDBClusterReconciler) transferTransitionKeys(from, to *pxcv1.
 	}
 
 	for _, backupUIDInterface := range secretList.Data["keys"].([]interface{}) {
-		backupUID := backupUIDInterface.(string)
+		backupUID, ok := backupUIDInterface.(string)
+		if !ok {
+			r.Log.Error(nil, "Can't cast key to string", "key", backupUIDInterface)
+			continue
+		}
 
 		secretData, err := logicalClient.Read(vaultSecretFrom + "/backup/" + backupUID)
 		if err != nil {
