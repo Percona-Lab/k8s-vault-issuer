@@ -22,6 +22,9 @@ func (c Cluster) String() string {
 }
 
 func (c Cluster) isCopyAllowed(allowedClusters string) bool {
+	if allowedClusters == "*" {
+		return true
+	}
 	currClusterStr := c.String()
 	for _, v := range strings.Split(allowedClusters, ",") {
 		if currClusterStr == v {
