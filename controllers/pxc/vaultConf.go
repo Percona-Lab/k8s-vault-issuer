@@ -104,7 +104,7 @@ func vaultTransport(cert []byte) (http.RoundTripper, error) {
 
 func readVaultToken() ([]byte, error) {
 	path := defaultTokenPath
-	if envPath := os.Getenv("VAULT_TOKEN"); envPath != "" {
+	if envPath, ok := os.LookupEnv("VAULT_TOKEN_FILEPATH"); ok {
 		path = envPath
 	}
 	return ioutil.ReadFile(path)
