@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pxcv1 "github.com/Percona-Lab/k8s-vault-issuer/apis/pxc/v1"
-	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 type Cluster struct {
@@ -105,8 +105,8 @@ func (r *PerconaXtraDBClusterReconciler) copyVaultTransitionKeys(from, to *pxcv1
 		return errors.Wrapf(err, "get vault conf from namespace: %s, secretName: %s", to.Namespace, to.Spec.VaultSecretName)
 	}
 
-	vaultSecretFrom := srcVaultConf.Config["secret_mount_point"]
-	vaultSecretTo := targetVaultConf.Config["secret_mount_point"]
+	vaultSecretFrom := srcVaultConf.SecretMountPoint
+	vaultSecretTo := targetVaultConf.SecretMountPoint
 
 	r.Log.Info("Copying transition keys", "from", vaultSecretFrom, "to", vaultSecretTo)
 
