@@ -50,14 +50,18 @@ func (r *PerconaXtraDBClusterReconciler) vaultConfFrom(namespace, secretName str
 
 	token, err := readVaultToken()
 	if err != nil {
-		return vaultRootConf{}, errors.Wrap(err, "read token from file")
+		r.Log.Info("can't read vault token from file, trying to get from secret", "err", err)
+		token, ok = conf["token"]
+		if !ok {
+			return vaultRootConf{}, errors.New("can't find vault token in secret and file")
+		}
 	}
 
 	return vaultRootConf{
 		Cert:             rootSecretObj.Data["ca.cert"],
 		URL:              conf["vault_url"],
 		SecretMountPoint: conf["secret_mount_point"],
-		Token:            string(token),
+		Token:            token,
 	}, nil
 }
 
@@ -102,10 +106,12 @@ func vaultTransport(cert []byte) (http.RoundTripper, error) {
 	}, nil
 }
 
-func readVaultToken() ([]byte, error) {
+func readVaultToken() (string, error) {
 	path := defaultTokenPath
 	if envPath, ok := os.LookupEnv("VAULT_TOKEN_FILEPATH"); ok {
 		path = envPath
 	}
-	return ioutil.ReadFile(path)
+
+	data, err := ioutil.ReadFile(path)
+	return string(data), err
 }
