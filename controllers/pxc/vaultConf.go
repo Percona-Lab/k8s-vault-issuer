@@ -4,16 +4,26 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
-
 	"github.com/hashicorp/vault/api"
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
+
+const defaultTokenPath = "/etc/k8s-vault-issuer/token"
+
+type vaultRootConf struct {
+	Cert             []byte
+	URL              string
+	Token            string
+	SecretMountPoint string
+}
 
 func (r *PerconaXtraDBClusterReconciler) vaultConfFrom(namespace, secretName string) (vaultRootConf, error) {
 	rootSecretObj := corev1.Secret{}
@@ -25,20 +35,34 @@ func (r *PerconaXtraDBClusterReconciler) vaultConfFrom(namespace, secretName str
 		&rootSecretObj,
 	)
 	if err != nil {
-		return vaultRootConf{}, err
+		return vaultRootConf{}, errors.Wrap(err, "read secret")
 	}
 
-	res := vaultRootConf{
-		Cert:   rootSecretObj.Data["ca.cert"],
-		Config: make(map[string]string),
+	vaultConf, ok := rootSecretObj.Data["keyring_vault.conf"]
+	if !ok {
+		return vaultRootConf{}, errors.New("can't find keyring_vault.conf in secret")
 	}
-
-	data := string(rootSecretObj.Data["keyring_vault.conf"])
-	for _, f := range strings.Split(data, "\n") {
+	conf := make(map[string]string)
+	for _, f := range strings.Split(string(vaultConf), "\n") {
 		kv := strings.Split(f, "=")
-		res.Config[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		conf[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
 	}
-	return res, nil
+
+	token, err := readVaultToken()
+	if err != nil {
+		r.Log.Info("can't read vault token from file, trying to get from secret", "err", err)
+		token, ok = conf["token"]
+		if !ok {
+			return vaultRootConf{}, errors.New("can't find vault token in secret and file")
+		}
+	}
+
+	return vaultRootConf{
+		Cert:             rootSecretObj.Data["ca.cert"],
+		URL:              conf["vault_url"],
+		SecretMountPoint: conf["secret_mount_point"],
+		Token:            token,
+	}, nil
 }
 
 func vaultClient(vaultConf vaultRootConf) (*api.Client, error) {
@@ -55,13 +79,12 @@ func vaultClient(vaultConf vaultRootConf) (*api.Client, error) {
 
 	client, err := api.NewClient(&api.Config{
 		HttpClient: httpClient,
-		Address:    vaultConf.Config["vault_url"],
+		Address:    vaultConf.URL,
 	})
-
 	if err != nil {
 		return nil, errors.Wrap(err, "create vault client")
 	}
-	client.SetToken(vaultConf.Config["token"])
+	client.SetToken(vaultConf.Token)
 	return client, nil
 }
 
@@ -81,4 +104,14 @@ func vaultTransport(cert []byte) (http.RoundTripper, error) {
 			RootCAs: certPool,
 		},
 	}, nil
+}
+
+func readVaultToken() (string, error) {
+	path := defaultTokenPath
+	if envPath, ok := os.LookupEnv("VAULT_TOKEN_FILEPATH"); ok {
+		path = envPath
+	}
+
+	data, err := ioutil.ReadFile(path)
+	return string(data), err
 }

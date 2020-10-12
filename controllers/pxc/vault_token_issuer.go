@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	pxcv1 "github.com/Percona-Lab/k8s-vault-issuer/apis/pxc/v1"
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/vault/api"
 	"github.com/pkg/errors"
@@ -12,6 +11,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	pxcv1 "github.com/Percona-Lab/k8s-vault-issuer/apis/pxc/v1"
 )
 
 func (r *PerconaXtraDBClusterReconciler) processVaultIssueAnnotation(o *pxcv1.PerconaXtraDBCluster, log logr.Logger) error {
@@ -51,7 +52,7 @@ func (r *PerconaXtraDBClusterReconciler) issueVaultToken(newSecretName string, c
 		newData["ca.cert"] = rootVaultConf.Cert
 	}
 
-	path := fmt.Sprintf("%s/%s/%s", rootVaultConf.Config["secret_mount_point"], customerNamespace, newSecretName)
+	path := fmt.Sprintf("%s/%s/%s", rootVaultConf.SecretMountPoint, customerNamespace, newSecretName)
 	policy := fmt.Sprintf(`
 path "%s"
 {
@@ -85,9 +86,9 @@ vault_url = %s
 secret_mount_point = %s
 vault_ca = %s`,
 			token,
-			rootVaultConf.Config["vault_url"],
+			rootVaultConf.URL,
 			path,
-			rootVaultConf.Config["vault_ca"],
+			rootVaultConf.Cert,
 		))
 
 	secretObj := corev1.Secret{

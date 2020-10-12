@@ -27,6 +27,8 @@ spec:
         env:
           - name: VAULT_SECRET_NAME
             value: "root-token"
+          - name: VAULT_TOKEN_FILEPATH
+            value: "/some/token/path"
         resources:
           limits:
             cpu: 100m
